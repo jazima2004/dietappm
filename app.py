@@ -3,12 +3,21 @@ import streamlit as st
 import numpy as np
 import joblib
 
+st.set_page_config(page_title="Ayurvedic Diet Management System", layout="centered")
+
+st.title("Ayurvedic Diet Management System")
+st.write("Enter patient details to predict Prakriti and nutrient targets:")
+
 # ==========================
-# Load saved model and maps
+# Load pre-trained models
 # ==========================
-kmeans = joblib.load("kmeans_prakriti_model.joblib")
-cluster_map = joblib.load("cluster_map.joblib")
-activity_map = joblib.load("activity_map.joblib")
+try:
+    kmeans = joblib.load("kmeans_prakriti_model.joblib")
+    cluster_map = joblib.load("cluster_map.joblib")
+    activity_map = joblib.load("activity_map.joblib")
+    st.success("Pre-trained models loaded successfully!")
+except Exception as e:
+    st.error(f"Error loading models: {e}")
 
 # ==========================
 # Nutrient calculation function
@@ -22,9 +31,13 @@ def compute_nutrient_targets(age, gender, height_cm, weight_kg,
     C = 5 if str(gender).lower().startswith('m') else -161
     bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) + C
     tdee = bmr * af
-    if goal=='loss': calorie_target = tdee - 500
-    elif goal=='gain': calorie_target = tdee + 500
-    else: calorie_target = tdee
+
+    if goal=='loss':
+        calorie_target = tdee - 500
+    elif goal=='gain':
+        calorie_target = tdee + 500
+    else:
+        calorie_target = tdee
 
     # Prakriti adjustments
     prakriti_factors = {'vata':1.05,'pitta':1.00,'kapha':0.95}
@@ -33,10 +46,12 @@ def compute_nutrient_targets(age, gender, height_cm, weight_kg,
         'pitta': {'carbs':+0.05,'protein':0.0,'fat':-0.05},
         'kapha': {'carbs':-0.10,'protein':+0.10,'fat':0.0}
     }
+
     parts = [p.lower() for p in prakriti.split('-')]
     mults = [prakriti_factors.get(p,1.0) for p in parts]
     avg_mult = sum(mults)/len(mults)
     calorie_target *= avg_mult
+
     deltas = {'carbs':0.0,'protein':0.0,'fat':0.0}
     for p in parts:
         d = prakriti_deltas.get(p)
@@ -69,11 +84,8 @@ def compute_nutrient_targets(age, gender, height_cm, weight_kg,
     return {'calories':calories,'carbs_g':carbs_g,'protein_g':protein_g,'fat_g':fat_g}
 
 # ==========================
-# Streamlit UI
+# Patient input form
 # ==========================
-st.title("Ayurvedic Diet Management System")
-st.write("Enter patient details to predict Prakriti and nutrient targets:")
-
 with st.form("patient_form"):
     age = st.number_input("Age", min_value=1, max_value=120, value=25)
     gender = st.selectbox("Gender", ["Male","Female"])
@@ -84,23 +96,24 @@ with st.form("patient_form"):
     health_conditions_str = st.text_input("Health Conditions (comma-separated, e.g., Diabetes,Hypertension)", "")
     submitted = st.form_submit_button("Submit")
 
-    if submitted:
-        health_conditions = [x.strip() for x in health_conditions_str.split(",") if x.strip()]
-        bmi = weight_kg / (height_cm/100)**2
-        activity_num = activity_map.get(activity, 3)
-        health_count = len(health_conditions)
+if submitted:
+    health_conditions = [x.strip() for x in health_conditions_str.split(",") if x.strip()]
+    bmi = weight_kg / (height_cm/100)**2
+    activity_num = activity_map.get(activity, 3)
+    health_count = len(health_conditions)
 
-        X_new = np.array([[bmi, weight_kg, height_cm, activity_num, health_count]])
-        cluster_label = kmeans.predict(X_new)[0]
-        prakriti_pred = cluster_map[cluster_label]
+    X_new = np.array([[bmi, weight_kg, height_cm, activity_num, health_count]])
+    cluster_label = kmeans.predict(X_new)[0]
+    prakriti_pred = cluster_map[cluster_label]
 
-        nutrient_targets = compute_nutrient_targets(
-            age, gender, height_cm, weight_kg,
-            activity_level=activity, goal=goal,
-            prakriti=prakriti_pred, health_conditions=health_conditions
-        )
+    nutrient_targets = compute_nutrient_targets(
+        age, gender, height_cm, weight_kg,
+        activity_level=activity, goal=goal,
+        prakriti=prakriti_pred, health_conditions=health_conditions
+    )
 
-        st.subheader("Predicted Prakriti:")
-        st.write(prakriti_pred)
-        st.subheader("Nutrient Targets:")
-        st.write(nutrient_targets)
+    st.subheader("Predicted Prakriti:")
+    st.write(prakriti_pred)
+
+    st.subheader("Nutrient Targets:")
+    st.write(nutrient_targets)
